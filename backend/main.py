@@ -25,11 +25,15 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# Allow all origins so the Next.js frontend (localhost:3000) can reach this API
+# Allow frontend origins (local dev + Vercel production)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],       # Tighten in production (e.g., ["http://localhost:3000"])
-    allow_credentials=True,
+    allow_origins=[
+        "http://localhost:3000",
+        "https://chat-with-pdf-taupe-delta.vercel.app",
+        "*",
+    ],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
