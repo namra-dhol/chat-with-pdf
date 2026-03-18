@@ -1,71 +1,50 @@
 """
 embedding_model.py
 ------------------
-Singleton wrapper around the sentence-transformers model.
-Loads the model once and reuses it for all embedding requests.
+Wrapper that uses the HuggingFace Inference API to get embeddings remotely.
+This avoids loading PyTorch and the model locally, saving >500MB of RAM.
 """
 
 import os
+import requests
 import numpy as np
-from sentence_transformers import SentenceTransformer
 from typing import List
-from huggingface_hub import login
 
-# --- Model Selection ---
-# Using all-MiniLM-L6-v2 because it is:
-#   - Lightweight (~80 MB) — fast to load and run on CPU
-#   - Optimized for semantic similarity tasks
-#   - Produces 384-dimensional embeddings — low memory footprint
-#   - State-of-the-art performance on semantic search benchmarks
 MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+API_URL = f"https://api-inference.huggingface.co/pipeline/feature-extraction/{MODEL_NAME}"
 
-# Authenticate with HuggingFace Hub if token is available
-_hf_token = os.getenv("HF_TOKEN")
-if _hf_token:
-    login(token=_hf_token)
-    print("[HuggingFace] Authenticated with HF_TOKEN.")
-else:
-    print("[HuggingFace] WARNING: No HF_TOKEN set. Downloads may be rate-limited.")
-
-# Singleton: loaded once when the module is first imported
-_model: SentenceTransformer | None = None
-
-
-def _get_model() -> SentenceTransformer:
-    """Load and cache the embedding model (lazy initialization)."""
-    global _model
-    if _model is None:
-        print(f"[Embedding] Loading model: {MODEL_NAME} ...")
-        _model = SentenceTransformer(MODEL_NAME)
-        print(f"[Embedding] Model loaded successfully.")
-    return _model
-
+def _get_headers():
+    token = os.getenv("HF_TOKEN")
+    if token:
+        return {"Authorization": f"Bearer {token}"}
+    return {}
 
 def get_embedding(text: str) -> np.ndarray:
     """
-    Generate a single embedding vector for a given text.
-
-    Args:
-        text: Input string to embed.
-
-    Returns:
-        A 1-D numpy array of shape (384,).
+    Generate a single embedding vector for a given text using HF Inference API.
     """
-    model = _get_model()
-    return model.encode(text, convert_to_numpy=True)
-
+    headers = _get_headers()
+    response = requests.post(API_URL, headers=headers, json={"inputs": [text], "options": {"wait_for_model": True}})
+    
+    if not response.ok:
+        raise RuntimeError(f"HuggingFace API error: {response.text}")
+        
+    data = response.json()
+    # The API returns a list of lists when given a list of inputs
+    return np.array(data[0])
 
 def get_embeddings(texts: List[str]) -> List[np.ndarray]:
     """
-    Generate embeddings for a list of text chunks (batched for efficiency).
-
-    Args:
-        texts: List of input strings.
-
-    Returns:
-        A list of 1-D numpy arrays, one per input text.
+    Generate embeddings for a list of text chunks using HF Inference API.
     """
-    model = _get_model()
-    # encode() with a list returns a 2D numpy array; we convert to a list of 1D arrays
-    embeddings = model.encode(texts, convert_to_numpy=True, show_progress_bar=True)
-    return [embeddings[i] for i in range(len(embeddings))]
+    if not texts:
+        return []
+        
+    headers = _get_headers()
+    response = requests.post(API_URL, headers=headers, json={"inputs": texts, "options": {"wait_for_model": True}})
+    
+    if not response.ok:
+        raise RuntimeError(f"HuggingFace API error: {response.text}")
+        
+    data = response.json()
+    return [np.array(emb) for emb in data]

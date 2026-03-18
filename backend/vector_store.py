@@ -8,7 +8,6 @@ import os
 import pickle
 import numpy as np
 from typing import List, Dict, Any, Tuple
-from sklearn.metrics.pairwise import cosine_similarity
 
 
 # Default path for the pickle data file
@@ -88,11 +87,16 @@ def search(
     # Stack embeddings into a 2D matrix: shape (num_chunks, embedding_dim)
     embedding_matrix = np.vstack(embeddings)
 
-    # Reshape query to (1, embedding_dim) for sklearn
-    query_2d = query_embedding.reshape(1, -1)
-
-    # Compute cosine similarity between query and all chunk embeddings
-    similarities = cosine_similarity(query_2d, embedding_matrix)[0]  # shape (num_chunks,)
+    # Compute cosine similarity using pure numpy (dot product over norms)
+    query_norm = np.linalg.norm(query_embedding)
+    if query_norm == 0:
+        similarities = np.zeros(embedding_matrix.shape[0])
+    else:
+        dots = np.dot(embedding_matrix, query_embedding)
+        norms = np.linalg.norm(embedding_matrix, axis=1)
+        # Avoid division by zero
+        norms[norms == 0] = 1 
+        similarities = dots / (norms * query_norm)
 
     # Get indices of top-k most similar chunks
     top_indices = np.argsort(similarities)[::-1][:top_k]
