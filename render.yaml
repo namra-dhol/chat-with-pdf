@@ -1,0 +1,30 @@
+# render.yaml
+# -----------
+# Render.com deployment configuration for the FastAPI backend.
+# Docs: https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: chat-with-pdf-backend
+    runtime: python
+    region: oregon          # closest free region — change if needed
+    plan: free
+
+    # Working directory for the backend
+    rootDir: backend
+
+    # Install dependencies
+    buildCommand: pip install -r requirements.txt
+
+    # Start the FastAPI server — Render injects $PORT automatically
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+
+    # Environment variables — DO NOT put real values here.
+    # Set the real values in the Render Dashboard > Environment tab.
+    envVars:
+      - key: LLM_PROVIDER
+        value: groq
+      - key: GROQ_MODEL
+        value: llama-3.3-70b-versatile
+      - key: GROQ_API_KEY
+        sync: false          # ← Render will prompt you to enter this manually
