@@ -1,50 +1,63 @@
 """
 embedding_model.py
 ------------------
-Wrapper that uses the HuggingFace Inference API to get embeddings remotely.
-This avoids loading PyTorch and the model locally, saving >500MB of RAM.
+Wrapper that uses the HuggingFace Inference API to get embeddings remotely
+via the official huggingface_hub client.
 """
 
 import os
-import requests
 import numpy as np
 from typing import List
+from huggingface_hub import InferenceClient
 
 MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
-API_URL = f"https://api-inference.huggingface.co/pipeline/feature-extraction/{MODEL_NAME}"
 
-def _get_headers():
-    token = os.getenv("HF_TOKEN")
-    if token:
-        return {"Authorization": f"Bearer {token}"}
-    return {}
+# Initialize the client. It automatically picks up HF_TOKEN from environment.
+_client = None
+
+def _get_client():
+    global _client
+    if _client is None:
+        token = os.getenv("HF_TOKEN")
+        _client = InferenceClient(model=MODEL_NAME, token=token)
+        if not token:
+            print("[Embedding] Warning: No HF_TOKEN set. Expected rate limits.")
+    return _client
 
 def get_embedding(text: str) -> np.ndarray:
     """
-    Generate a single embedding vector for a given text using HF Inference API.
+    Generate a single embedding vector for a given text.
     """
-    headers = _get_headers()
-    response = requests.post(API_URL, headers=headers, json={"inputs": [text], "options": {"wait_for_model": True}})
-    
-    if not response.ok:
-        raise RuntimeError(f"HuggingFace API error: {response.text}")
-        
-    data = response.json()
-    # The API returns a list of lists when given a list of inputs
-    return np.array(data[0])
+    client = _get_client()
+    try:
+        res = client.feature_extraction(text)
+        return np.array(res)
+    except Exception as e:
+        raise RuntimeError(f"HuggingFace API error: {e}")
 
 def get_embeddings(texts: List[str]) -> List[np.ndarray]:
     """
-    Generate embeddings for a list of text chunks using HF Inference API.
+    Generate embeddings for a list of text chunks in batches.
     """
     if not texts:
         return []
-        
-    headers = _get_headers()
-    response = requests.post(API_URL, headers=headers, json={"inputs": texts, "options": {"wait_for_model": True}})
+
+    client = _get_client()
+    all_embeddings = []
     
-    if not response.ok:
-        raise RuntimeError(f"HuggingFace API error: {response.text}")
-        
-    data = response.json()
-    return [np.array(emb) for emb in data]
+    # Process in batches of 20 to avoid payload limits and timeouts
+    batch_size = 20
+    for i in range(0, len(texts), batch_size):
+        batch = texts[i:i + batch_size]
+        try:
+            res = client.feature_extraction(batch)
+            # res is a list of lists of floats or numpy array depending on version
+            if isinstance(res, np.ndarray):
+                all_embeddings.extend(res)
+            else:
+                for emb in res:
+                    all_embeddings.append(np.array(emb))
+        except Exception as e:
+            raise RuntimeError(f"HuggingFace API batch error: {e}")
+
+    return all_embeddings
