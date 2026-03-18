@@ -5,9 +5,11 @@ Singleton wrapper around the sentence-transformers model.
 Loads the model once and reuses it for all embedding requests.
 """
 
+import os
 import numpy as np
 from sentence_transformers import SentenceTransformer
 from typing import List
+from huggingface_hub import login
 
 # --- Model Selection ---
 # Using all-MiniLM-L6-v2 because it is:
@@ -16,6 +18,14 @@ from typing import List
 #   - Produces 384-dimensional embeddings — low memory footprint
 #   - State-of-the-art performance on semantic search benchmarks
 MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+
+# Authenticate with HuggingFace Hub if token is available
+_hf_token = os.getenv("HF_TOKEN")
+if _hf_token:
+    login(token=_hf_token)
+    print("[HuggingFace] Authenticated with HF_TOKEN.")
+else:
+    print("[HuggingFace] WARNING: No HF_TOKEN set. Downloads may be rate-limited.")
 
 # Singleton: loaded once when the module is first imported
 _model: SentenceTransformer | None = None
